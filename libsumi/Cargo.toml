@@ -1,0 +1,12 @@
+[package]
+name = "libsumi"
+version = "0.0.2"
+edition = "2021"
+description = "The core mathematics and logic library for the GYOSHO graphics ecosystem."
+license = "MIT" # or "Apache-2.0"
+repository = "https://github.com/crux161/libsumi" 
+
+[dependencies]
+bytemuck = { version = "1.24.0", features = ["derive"] }
+glam = { version = "0.31.0", features = ["fast-math", "bytemuck", "serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
