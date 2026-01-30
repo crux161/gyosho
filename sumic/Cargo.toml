@@ -8,6 +8,7 @@ clap = { version = "4.4", features = ["derive"] }
 anyhow = "1.0"
 logos = "0.13" # The new lexer engine
 naga = { version = "0.19", features = ["glsl-in", "msl-out", "wgsl-out"] }
+regex = "1.12.2"
 
 [lib]
 path = "src/lib.rs"

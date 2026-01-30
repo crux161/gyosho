@@ -6,7 +6,8 @@ use logos::Logos;
 
 use sumic::lexer::Token;
 use sumic::parser::Parser;
-use sumic::codegen::{MetalGenerator, WgslGenerator, MarkdownGenerator, CodeGenerator}; // Added WgslGenerator
+use sumic::codegen::{MetalGenerator, WgslGenerator, MarkdownGenerator, CodeGenerator};
+use sumic::preprocessor::Preprocessor; // Ensure this is imported
 
 #[derive(ClapParser, Debug)]
 #[command(author, version, about)]
@@ -17,7 +18,6 @@ struct Args {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Output Format
     #[arg(short, long, value_enum, default_value_t = Target::Wgsl)]
     format: Target,
 }
@@ -33,17 +33,34 @@ fn main() -> Result<()> {
     let args = Args::parse();
     println!("--- SumiC Compiler ---");
 
-    // 1. Read
-    let raw_source = fs::read_to_string(&args.input)
-        .with_context(|| format!("Failed to read {:?}", args.input))?;
+    // 1. Preprocess (Resolve Includes)
+    println!("🔍 Preprocessing...");
+    let mut preprocessor = Preprocessor::new();
+    
+    // FIX: We capture the output here...
+    let preprocessed_source = preprocessor.process(&args.input)
+        .with_context(|| format!("Failed to preprocess {:?}", args.input))?;
 
     // 2. Lex
-    let lexer = Token::lexer(&raw_source);
-    let tokens: Vec<_> = lexer.filter_map(|r| r.ok()).collect(); // Simplified for brevity
+    // ...and we MUST pass that specific variable to the lexer!
+    let lexer = Token::lexer(&preprocessed_source);
+    
+    let mut tokens = Vec::new();
+    for (result, span) in lexer.spanned() {
+        match result {
+            Ok(token) => tokens.push(token),
+            Err(_) => {
+                // Optional: You could print the span to debug specific invalid tokens
+                // eprintln!("Lexer Error at {:?}", span);
+            }
+        }
+    }
 
     // 3. Parse
+    println!("🏗️ Parsing...");
     let mut parser = Parser::new(tokens);
-    let ast = parser.parse().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let ast = parser.parse()
+        .map_err(|e| anyhow::anyhow!("Parser Error: {}", e))?;
 
     // 4. Generate
     let code = match args.format {

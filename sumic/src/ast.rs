@@ -42,24 +42,22 @@ pub enum AstNode {
         else_branch: Option<Box<AstNode>>,
     },
 
-    // Expressions
-    BinaryOp {
-        left: Box<AstNode>,
-        op: BinaryOperator,
-        right: Box<AstNode>,
+    ForStmt {
+        init: Box<AstNode>,      // e.g. int i = 0
+        condition: Box<AstNode>, // e.g. i < 80
+        increment: Box<AstNode>, // e.g. i = i + 1
+        body: Box<AstNode>,
     },
-    Call {
-        func_name: String,
-        args: Vec<AstNode>,
-    },
-    SubscriptAccess {
-        base: Box<AstNode>,
-        index: Box<AstNode>,
-    },
-    MemberAccess {
-        base: Box<AstNode>,
-        member: String,
-    },
+    BreakStmt,
+// --- EXPRESSIONS ---
+    BinaryOp { left: Box<AstNode>, op: BinaryOperator, right: Box<AstNode> },
+    
+    // --- NEW UNARY ---
+    UnaryOp { op: UnaryOperator, right: Box<AstNode> },
+
+    Call { func_name: String, args: Vec<AstNode> },
+    SubscriptAccess { base: Box<AstNode>, index: Box<AstNode> },
+    MemberAccess { base: Box<AstNode>, member: String },
     LiteralFloat(f64),
     LiteralInt(i64),
     Variable(String),
@@ -69,4 +67,10 @@ pub enum AstNode {
 pub enum BinaryOperator {
     Add, Sub, Mul, Div,
     Equal, Less, Greater,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnaryOperator {
+    Negate, // -x
+    Not,    // !x
 }

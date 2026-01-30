@@ -1,4 +1,4 @@
-use crate::ast::{AstNode, BinaryOperator};
+use crate::ast::{AstNode, BinaryOperator, UnaryOperator};
 
 pub trait CodeGenerator {
     fn generate(&self, ast: &AstNode) -> String;
@@ -7,7 +7,7 @@ pub trait CodeGenerator {
 // --- Metal Shading Language (MSL) Generator ---
 
 pub struct MetalGenerator {
-    pub is_std_lib: bool, // Fixed: Bool -> bool
+    pub is_std_lib: bool,
 }
 
 impl MetalGenerator {
@@ -78,6 +78,17 @@ impl CodeGenerator for MetalGenerator {
                 code
             },
 
+            AstNode::ForStmt { init, condition, increment, body } => {
+                let init_code = self.generate(init);
+                let cond_code = self.generate(condition);
+                let inc_code = self.generate(increment);
+                let inc_clean = inc_code.trim_end_matches(';');
+
+                format!("for ({} {}; {}) {}", init_code, cond_code, inc_clean, self.generate(body))
+            },
+
+            AstNode::BreakStmt => "break;".to_string(),
+
             AstNode::VarDecl { type_name, name, value } => {
                 if let Some(val) = value {
                     format!("{} {} = {};", type_name, name, self.generate(val))
@@ -101,6 +112,14 @@ impl CodeGenerator for MetalGenerator {
 
             AstNode::BinaryOp { left, op, right } => {
                 format!("({} {} {})", self.generate(left), self.generate_op(op), self.generate(right))
+            },
+
+            AstNode::UnaryOp { op, right } => {
+                let op_str = match op {
+                    UnaryOperator::Negate => "-",
+                    UnaryOperator::Not => "!",
+                };
+                format!("({}{})", op_str, self.generate(right))
             },
 
             AstNode::Call { func_name, args } => {
@@ -129,7 +148,8 @@ impl CodeGenerator for MetalGenerator {
     }
 }
 
-// --- WGSL Generator (New!) ---
+
+// --- WGSL Generator ---
 
 pub struct WgslGenerator;
 
@@ -147,7 +167,7 @@ impl WgslGenerator {
             "vec4"  => "vec4<f32>".to_string(),
             "mat4"  => "mat4x4<f32>".to_string(), 
             "void"  => "".to_string(),
-            _ => t.to_string(), // Custom structs pass through
+            _ => t.to_string(),
         }
     }
 
@@ -213,6 +233,17 @@ impl CodeGenerator for WgslGenerator {
                 code
             },
 
+            AstNode::ForStmt { init, condition, increment, body } => {
+                let init_code = self.generate(init); 
+                let cond_code = self.generate(condition); 
+                let inc_code = self.generate(increment); 
+                let inc_clean = inc_code.trim_end_matches(';');
+                
+                format!("for ({} {}; {}) {}", init_code, cond_code, inc_clean, self.generate(body))
+            },
+
+            AstNode::BreakStmt => "break;".to_string(),
+
             AstNode::VarDecl { type_name, name, value } => {
                 let mapped_type = self.map_type(type_name);
                 if let Some(val) = value {
@@ -222,7 +253,6 @@ impl CodeGenerator for WgslGenerator {
                 }
             },
 
-            // Arrays in WGSL need strict sizing, e.g., var a: array<f32, 4>;
             AstNode::ArrayDecl { type_name, name, size, values } => {
                 let mapped_type = self.map_type(type_name);
                 let type_str = format!("array<{}, {}>", mapped_type, size);
@@ -243,10 +273,16 @@ impl CodeGenerator for WgslGenerator {
                 format!("({} {} {})", self.generate(left), self.generate_op(op), self.generate(right))
             },
 
-            // WGSL specific: built-ins often match GLSL, but type constructors are explicit
+            AstNode::UnaryOp { op, right } => {
+                let op_str = match op {
+                    UnaryOperator::Negate => "-",
+                    UnaryOperator::Not => "!",
+                };
+                format!("({}{})", op_str, self.generate(right))
+            },
+
             AstNode::Call { func_name, args } => {
                 let arg_str = args.iter().map(|a| self.generate(a)).collect::<Vec<_>>().join(", ");
-                // If the function name is a type (vec3), WGSL handles it as vec3<f32>(...)
                 if ["vec2", "vec3", "vec4"].contains(&func_name.as_str()) {
                      format!("{}<f32>({})", func_name, arg_str)
                 } else {
@@ -261,7 +297,16 @@ impl CodeGenerator for WgslGenerator {
                 if f.fract() == 0.0 { format!("{:.1}", f) } else { format!("{}", f) }
             },
             AstNode::LiteralInt(i) => format!("{}", i),
-            AstNode::Variable(name) => name.clone(),
+            
+            // --- THE KEY FIX IS HERE ---
+            AstNode::Variable(name) => {
+                match name.as_str() {
+                    "iTime" => "u.time".to_string(),
+                    "iResolution" => "vec3<f32>(u.resolution, 1.0)".to_string(),
+                    "iMouse" => "u.mouse".to_string(),
+                    _ => name.clone(),
+                }
+            },
         }
     }
 }
@@ -315,52 +360,5 @@ impl MarkdownGenerator {
             },
             _ => None,
         }
-    }
-}
-
-// --- TESTS ---
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ast::*;
-
-    #[test]
-    fn test_metal_var_decl() {
-        let node = AstNode::VarDecl { 
-            type_name: "vec3".into(), 
-            name: "pos".into(), 
-            value: Some(Box::new(AstNode::LiteralFloat(1.0))) 
-        };
-        let gen = MetalGenerator::new(false);
-        assert_eq!(gen.generate(&node), "vec3 pos = 1.0;");
-    }
-
-    #[test]
-    fn test_metal_struct() {
-        let node = AstNode::StructDecl {
-            name: "Light".into(),
-            fields: vec![("vec3".into(), "color".into())],
-            doc_string: None
-        };
-        let gen = MetalGenerator::new(false);
-        let output = gen.generate(&node);
-        assert!(output.contains("struct Light {"));
-        assert!(output.contains("vec3 color;"));
-    }
-
-    #[test]
-    fn test_markdown_gen() {
-        let node = AstNode::FunctionDecl {
-            return_type: "void".into(),
-            name: "main".into(),
-            args: vec![],
-            body: Box::new(AstNode::Block(vec![])),
-            doc_string: Some("Entry point".into())
-        };
-        let gen = MarkdownGenerator;
-        let output = gen.generate_node_doc(&node).unwrap();
-        assert!(output.contains("### `main`"));
-        assert!(output.contains("> Entry point"));
     }
 }

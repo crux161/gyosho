@@ -11,14 +11,16 @@ pub type Quat = glam::Quat;
 
 // --- Traits for GLSL-like Polymorphism ---
 
-/// Trait for types that support component-wise operations (floor, fract, mix)
 pub trait GenType: Copy {
     fn floor(self) -> Self;
     fn fract(self) -> Self;
+    fn abs(self) -> Self;
+    fn min(self, other: Self) -> Self;
+    fn max(self, other: Self) -> Self;
+    fn clamp(self, min: Self, max: Self) -> Self;
     fn mix(self, other: Self, t: f32) -> Self;
 }
 
-/// Trait for types that support dot products
 pub trait DotProduct: Copy {
     fn dot(self, other: Self) -> f32;
 }
@@ -29,6 +31,10 @@ pub trait DotProduct: Copy {
 impl GenType for f32 {
     fn floor(self) -> Self { self.floor() }
     fn fract(self) -> Self { self.fract() }
+    fn abs(self) -> Self { self.abs() }
+    fn min(self, other: Self) -> Self { self.min(other) }
+    fn max(self, other: Self) -> Self { self.max(other) }
+    fn clamp(self, min: Self, max: Self) -> Self { self.clamp(min, max) }
     fn mix(self, other: Self, t: f32) -> Self { self * (1.0 - t) + other * t }
 }
 impl DotProduct for f32 {
@@ -39,6 +45,10 @@ impl DotProduct for f32 {
 impl GenType for Vec2 {
     fn floor(self) -> Self { self.floor() }
     fn fract(self) -> Self { self - self.floor() }
+    fn abs(self) -> Self { self.abs() }
+    fn min(self, other: Self) -> Self { self.min(other) }
+    fn max(self, other: Self) -> Self { self.max(other) }
+    fn clamp(self, min: Self, max: Self) -> Self { self.clamp(min, max) }
     fn mix(self, other: Self, t: f32) -> Self { self.lerp(other, t) }
 }
 impl DotProduct for Vec2 {
@@ -49,6 +59,10 @@ impl DotProduct for Vec2 {
 impl GenType for Vec3 {
     fn floor(self) -> Self { self.floor() }
     fn fract(self) -> Self { self - self.floor() }
+    fn abs(self) -> Self { self.abs() }
+    fn min(self, other: Self) -> Self { self.min(other) }
+    fn max(self, other: Self) -> Self { self.max(other) }
+    fn clamp(self, min: Self, max: Self) -> Self { self.clamp(min, max) }
     fn mix(self, other: Self, t: f32) -> Self { self.lerp(other, t) }
 }
 impl DotProduct for Vec3 {
@@ -59,6 +73,10 @@ impl DotProduct for Vec3 {
 impl GenType for Vec4 {
     fn floor(self) -> Self { self.floor() }
     fn fract(self) -> Self { self - self.floor() }
+    fn abs(self) -> Self { self.abs() }
+    fn min(self, other: Self) -> Self { self.min(other) }
+    fn max(self, other: Self) -> Self { self.max(other) }
+    fn clamp(self, min: Self, max: Self) -> Self { self.clamp(min, max) }
     fn mix(self, other: Self, t: f32) -> Self { self.lerp(other, t) }
 }
 impl DotProduct for Vec4 {
@@ -69,11 +87,15 @@ impl DotProduct for Vec4 {
 
 pub fn floor<T: GenType>(x: T) -> T { x.floor() }
 pub fn fract<T: GenType>(x: T) -> T { x.fract() }
+pub fn abs<T: GenType>(x: T) -> T { x.abs() }
+pub fn min<T: GenType>(a: T, b: T) -> T { a.min(b) }
+pub fn max<T: GenType>(a: T, b: T) -> T { a.max(b) }
+pub fn clamp<T: GenType>(v: T, min_val: T, max_val: T) -> T { v.clamp(min_val, max_val) }
 pub fn mix<T: GenType>(x: T, y: T, a: f32) -> T { x.mix(y, a) }
 pub fn dot<T: DotProduct>(x: T, y: T) -> f32 { x.dot(y) }
 
-// --- Scalar Math Wrappers ---
-
+// --- Scalar Only Math ---
+// These strictly return f32 and usually take f32, or specific vector ops
 pub fn radians(degrees: f32) -> f32 { degrees.to_radians() }
 pub fn degrees(radians: f32) -> f32 { radians.to_degrees() }
 pub fn sin(n: f32) -> f32 { n.sin() }
@@ -86,13 +108,8 @@ pub fn sqrt(n: f32) -> f32 { n.sqrt() }
 pub fn exp(n: f32) -> f32 { n.exp() }
 pub fn log(n: f32) -> f32 { n.ln() }
 pub fn pow(n: f32, e: f32) -> f32 { n.powf(e) }
-pub fn abs(n: f32) -> f32 { n.abs() }
 pub fn sign(n: f32) -> f32 { n.signum() }
 pub fn ceil(n: f32) -> f32 { n.ceil() }
-
-pub fn min(a: f32, b: f32) -> f32 { a.min(b) }
-pub fn max(a: f32, b: f32) -> f32 { a.max(b) }
-pub fn clamp(v: f32, min_val: f32, max_val: f32) -> f32 { v.clamp(min_val, max_val) }
 pub fn step(edge: f32, x: f32) -> f32 { if x < edge { 0.0 } else { 1.0 } }
 pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);

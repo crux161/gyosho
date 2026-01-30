@@ -149,9 +149,11 @@ impl State {
         });
 
         // --- Shader Loading ---
+        let header_source = include_str!("header.wgsl");
+        let stdlib_source = include_str!("stdlib.wgsl");
         let lib_source = include_str!("generated.wgsl");
         let driver_source = include_str!("shader.wgsl");
-        let final_source = format!("{}\n{}", lib_source, driver_source);
+        let final_source = format!("{}\n{}\n{}\n{}", header_source, stdlib_source, lib_source, driver_source);
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Sumi Shader Module"),
             source: wgpu::ShaderSource::Wgsl(final_source.into()),

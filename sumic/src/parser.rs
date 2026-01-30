@@ -256,6 +256,40 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
             return self.parse_block();
         }
 
+        if self.check(&Token::Break) {
+            self.advance();
+            self.consume(Token::Semicolon)?;
+            return Ok(AstNode::BreakStmt);
+        }
+
+        if self.check(&Token::For) {
+            self.advance();
+            self.consume(Token::LParen)?;
+            
+            // Init (usually a VarDecl or Assignment)
+            let init = self.parse_statement()?; 
+            // Note: parse_statement consumes the semicolon for VarDecl/Assignment!
+            
+            // Condition (Expression)
+            let condition = self.parse_expression()?;
+            self.consume(Token::Semicolon)?;
+            
+            // Increment (Expression/Assignment - no semicolon trailing in C-style usually, 
+            // but our parse_statement expects one. 
+            // Special case: parse expression strictly for increment)
+            let increment = self.parse_expression_assignment()?; 
+            self.consume(Token::RParen)?;
+            
+            let body = self.parse_statement()?; // Block usually
+            
+            return Ok(AstNode::ForStmt {
+                init: Box::new(init),
+                condition: Box::new(condition),
+                increment: Box::new(increment),
+                body: Box::new(body),
+            });
+        }
+
         // 2. If
         if self.check(&Token::If) {
             self.advance();
@@ -343,6 +377,17 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
         Ok(expr)
     }
 
+    fn parse_expression_assignment(&mut self) -> Result<AstNode, String> {
+        let expr = self.parse_expression()?;
+        if self.check(&Token::Equals) {
+            self.advance();
+            let value = self.parse_expression()?;
+            // No semicolon consumption here
+            return Ok(AstNode::Assignment { target: Box::new(expr), value: Box::new(value) });
+        }
+        Ok(expr)
+    }
+
     // --- Expression Parsing ---
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
@@ -380,19 +425,34 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
         Ok(left)
     }
 
-    fn parse_term(&mut self) -> Result<AstNode, String> {
-        let mut left = self.parse_postfix()?;
+ fn parse_term(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_unary()?; // Changed from parse_postfix
         loop {
+            // ... [Mul/Div logic]
             let op = match self.current() {
                 Some(Token::Star) => BinaryOperator::Mul,
                 Some(Token::Slash) => BinaryOperator::Div,
                 _ => break,
             };
             self.advance();
-            let right = self.parse_postfix()?;
+            let right = self.parse_unary()?; // Changed from parse_postfix
             left = AstNode::BinaryOp { left: Box::new(left), op, right: Box::new(right) };
         }
         Ok(left)
+    }
+
+ fn parse_unary(&mut self) -> Result<AstNode, String> {
+        if self.check(&Token::Minus) {
+            self.advance();
+            let right = self.parse_unary()?;
+            return Ok(AstNode::UnaryOp { op: crate::ast::UnaryOperator::Negate, right: Box::new(right) });
+        }
+        if self.check(&Token::Bang) {
+            self.advance();
+            let right = self.parse_unary()?;
+            return Ok(AstNode::UnaryOp { op: crate::ast::UnaryOperator::Not, right: Box::new(right) });
+        }
+        self.parse_postfix()
     }
 
     fn parse_postfix(&mut self) -> Result<AstNode, String> {

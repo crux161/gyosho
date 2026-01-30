@@ -15,6 +15,10 @@ pub enum Token {
     #[token("else")]
     Else,
 
+    #[token("for")] For,
+    #[token("break")] Break,
+    #[token("!")] Bang, 
+
     // --- Symbols ---
     #[token("(")] LParen,
     #[token(")")] RParen,

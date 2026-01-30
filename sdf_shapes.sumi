@@ -1,0 +1,3 @@
+fn sdSphere(p: vec3, r: float) float {
+	return length(p) - r;
+}

@@ -1,7 +1,8 @@
 pub mod ast;
 pub mod lexer;
 pub mod parser;
-pub mod codegen; // New
+pub mod codegen; 
+pub mod preprocessor;
 
 pub use ast::AstNode;
 pub use lexer::Token;
