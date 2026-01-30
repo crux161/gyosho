@@ -1,0 +1,32 @@
+// Project Gyosho: Ripple Test
+// Adapting Shadertoy logic to S2L
+
+// Note: SumiC compiles this to WGSL 'fn mainImage(...)'
+// Hanga Driver passes: (fragCoord, iResolution, iTime, iMouse)
+
+fn mainImage(fragCoord: vec2, iResolution: vec3, iTime: f32, iMouse: vec4) vec4 {
+    // 1. Normalize UV
+    vec2 uv = fragCoord / iResolution.xy;
+
+    // 2. Determine Center (Mouse or Center of Screen)
+    vec2 center = iResolution.xy * 0.5;
+    if (iMouse.z > 0.0) {
+        // If mouse is clicked/dragging
+        center = iMouse.xy;
+    }
+    
+    // 3. Calculate distance from center (corrected for aspect ratio)
+    vec2 p = fragCoord - center;
+    p.x = p.x * (iResolution.x / iResolution.y); // Fix Aspect
+    float dist = length(p) / iResolution.y;
+
+    // 4. Create Ripple (Sin wave expanding with time)
+    // color = sin(distance * frequency - time * speed)
+    float ripple = sin(dist * 50.0 - iTime * 5.0);
+    
+    // 5. Coloring
+    vec3 col = vec3(0.0, 0.5, 1.0); // Base Blue
+    col = col + ripple * 0.5;       // Add waves
+
+    return vec4(col, 1.0);
+}

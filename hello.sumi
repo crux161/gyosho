@@ -1,0 +1,11 @@
+/// A simple "Hello World" shader for Hanga
+struct Output {
+    vec4 color;
+};
+
+// Returns a red/blue gradient based on UV
+fn mainImage(vec2 uv, float time) vec4 {
+    float r = 0.5 + 0.5 * sin(time);
+    vec3 col = vec3(uv.x, uv.y, r);
+    return vec4(col.x, col.y, col.z, 1.0);
+}

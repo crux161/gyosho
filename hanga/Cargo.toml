@@ -5,9 +5,9 @@ edition = "2021"
 
 [dependencies]
 libsumi = { version = "0.0.2", path = "../libsumi" }
-
 winit = "0.29.15"  
 wgpu = "0.19.0"
 env_logger = "0.10"
 log = "0.4"
 pollster = "0.3"
+bytemuck = { version = "1.14", features = ["derive"] } # Added for Uniforms
