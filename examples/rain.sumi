@@ -1,0 +1,49 @@
+// Port of Eshi's bubbles.cpp (Modified for Raindrop/Pop Effect)
+
+fn hash(p: vec2) float {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+fn mainImage(fragCoord: vec2) vec4 {
+    vec2 uv = fragCoord / iResolution.y;
+    vec2 p = uv * 8.0;
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    
+    // Speed of the rain
+    float t = iTime * 0.5;
+    float v = 0.0;
+    
+    for(var y: i32 = -1; y <= 1; y = y + 1) {
+        for(var x: i32 = -1; x <= 1; x = x + 1) {
+            vec2 g = vec2(float(x), float(y));
+            
+            // Random offset for the bubble center
+            // Note: We duplicate hash(i+g) to vec2 to match C++ behavior (scalar add)
+            float h = hash(i + g);
+            vec2 r = g - f + vec2(h, h); 
+            float d = length(r);
+            
+            // --- RAINDROP LOGIC ---
+            // Old (Pulse): float s = 0.5 + 0.5 * sin(t + h * 6.28);
+            // New (Pop):   float s = fract(t + h);
+            
+            float s = fract(t + h);
+            
+            // Grow smoothly
+            float size = 0.4 * s;
+            
+            // Fade out quickly right before popping (optional, looks nicer)
+            // If s > 0.9, we fade from 1.0 to 0.0
+            float fade = smoothstep(1.0, 0.9, s);
+            
+            // Draw the bubble
+            // v += (1.0 - smoothstep(edge, size, dist)) * fade
+            float circle = 1.0 - smoothstep(size - 0.05, size, d);
+            v = v + circle * fade;
+        }
+    }
+    
+    vec3 col = vec3(0.2, 0.5, 1.0) * v;
+    return vec4(col.x, col.y, col.z, 1.0);
+}

@@ -1,7 +1,6 @@
-use crate::ast::{AstNode, BinaryOperator};
+use crate::ast::{AstNode, BinaryOperator, UnaryOperator};
 use crate::lexer::Token;
 
-/// The Recursive Descent Parser
 pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
@@ -12,25 +11,11 @@ impl Parser {
         Self { tokens, cursor: 0 }
     }
 
-    // --- Helpers ---
-
-    fn current(&self) -> Option<&Token> {
-        self.tokens.get(self.cursor)
-    }
-
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.cursor + 1)
-    }
-
-    fn advance(&mut self) {
-        if self.cursor < self.tokens.len() {
-            self.cursor += 1;
-        }
-    }
-
-    fn check(&self, token: &Token) -> bool {
-        self.current() == Some(token)
-    }
+    fn current(&self) -> Option<&Token> { self.tokens.get(self.cursor) }
+    fn peek(&self) -> Option<&Token> { self.tokens.get(self.cursor + 1) }
+    fn advance(&mut self) { if self.cursor < self.tokens.len() { self.cursor += 1; } }
+    
+    fn check(&self, token: &Token) -> bool { self.current() == Some(token) }
 
     fn consume(&mut self, expected: Token) -> Result<(), String> {
         if self.check(&expected) {
@@ -42,8 +27,6 @@ impl Parser {
         }
     }
 
-    // --- Parsing Logic ---
-
     pub fn parse(&mut self) -> Result<AstNode, String> {
         let mut nodes = Vec::new();
         while self.current().is_some() {
@@ -53,7 +36,7 @@ impl Parser {
     }
 
     fn parse_top_level(&mut self) -> Result<AstNode, String> {
-        // 1. Handle Doc Comments
+        // Handle Doc Comments
         let mut doc_string = None;
         if let Some(Token::DocComment(s)) = self.current() {
             doc_string = Some(s.clone());
@@ -64,18 +47,17 @@ impl Parser {
             }
         }
 
-        // 2. Struct Declaration
         if self.check(&Token::Struct) {
             return self.parse_struct(doc_string);
         }
 
-        // 3. Function Declaration (S2L Style): "fn Name(Args) Type { ... }"
+        // Function Declaration
+        // S2L: fn Name(...)
         if self.check(&Token::Fn) {
-            self.advance(); // Eat 'fn'
-            
+            self.advance();
             let name = match self.current() {
                 Some(Token::Identifier(s)) => s.clone(),
-                _ => return Err("Expected Function Name after 'fn'".to_string()),
+                _ => return Err("Expected Function Name".to_string()),
             };
             self.advance();
 
@@ -83,163 +65,87 @@ impl Parser {
             let args = self.parse_args()?;
             self.consume(Token::RParen)?;
 
-            // Parse Return Type (it comes AFTER args in S2L)
-            // e.g. fn main(...) vec4 { ... }
             let return_type = match self.current() {
-                Some(Token::Identifier(s)) => {
-                    let t = s.clone();
-                    self.advance();
-                    t
-                },
-                Some(Token::LBrace) => "void".to_string(), // Implicit void if no type
-                _ => return Err("Expected Return Type or Body".to_string()),
+                Some(Token::Identifier(s)) => { let t = s.clone(); self.advance(); t },
+                Some(Token::LBrace) => "void".to_string(),
+                _ => return Err("Expected Return Type".to_string()),
             };
 
             self.consume(Token::LBrace)?;
             let body = self.parse_block()?;
 
-            return Ok(AstNode::FunctionDecl {
-                return_type,
-                name,
-                args,
-                body: Box::new(body),
-                doc_string,
-            });
+            return Ok(AstNode::FunctionDecl { return_type, name, args, body: Box::new(body), doc_string });
         }
 
-        // 4. Function Declaration (Legacy C-Style): "Type Name(Args) { ... }"
-        // Fallback for compatibility or if user didn't write 'fn'
+        // Legacy C-Style Function: Type Name(...)
         let type_name = match self.current() {
             Some(Token::Identifier(s)) => s.clone(),
-            _ => return Err("Expected Function Return Type or Struct".to_string()),
+            _ => return Err("Expected Function or Struct".to_string()),
         };
         self.advance();
 
         let name = match self.current() {
             Some(Token::Identifier(s)) => s.clone(),
-            _ => return Err("Expected Function Name".to_string()),
+            _ => return Err("Expected Name".to_string()),
         };
         self.advance();
 
         self.consume(Token::LParen)?;
         let args = self.parse_args()?;
         self.consume(Token::RParen)?;
-        
         self.consume(Token::LBrace)?;
         let body = self.parse_block()?;
 
-        Ok(AstNode::FunctionDecl {
-            return_type: type_name,
-            name,
-            args,
-            body: Box::new(body),
-            doc_string,
-        })
+        Ok(AstNode::FunctionDecl { return_type: type_name, name, args, body: Box::new(body), doc_string })
     }
 
     fn parse_struct(&mut self, doc_string: Option<String>) -> Result<AstNode, String> {
         self.consume(Token::Struct)?;
-        
-        let name = match self.current() {
-            Some(Token::Identifier(s)) => s.clone(),
-            _ => return Err("Expected struct name".to_string()),
-        };
+        let name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected struct name".to_string()) };
         self.advance();
-
         self.consume(Token::LBrace)?;
-
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace) && self.current().is_some() {
-            // Field: Type Name ;
-            let type_name = match self.current() {
-                Some(Token::Identifier(s)) => s.clone(),
-                _ => return Err("Expected field type".to_string()),
-            };
+            let type_name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected field type".to_string()) };
             self.advance();
-
-            let field_name = match self.current() {
-                Some(Token::Identifier(s)) => s.clone(),
-                _ => return Err("Expected field name".to_string()),
-            };
+            let field_name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected field name".to_string()) };
             self.advance();
-
             self.consume(Token::Semicolon)?;
             fields.push((type_name, field_name));
         }
-
         self.consume(Token::RBrace)?;
         self.consume(Token::Semicolon)?; 
-
-        Ok(AstNode::StructDecl {
-            name,
-            fields,
-            doc_string,
-        })
+        Ok(AstNode::StructDecl { name, fields, doc_string })
     }
 
-fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
+    fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
         let mut args = Vec::new();
         while !self.check(&Token::RParen) {
-            
-            // 1. Skip GLSL Qualifiers
+            // Skip qualifiers
             if let Some(Token::Identifier(s)) = self.current() {
-                if s == "in" || s == "out" || s == "inout" {
-                    self.advance(); 
-                }
+                if s == "in" || s == "out" || s == "inout" { self.advance(); }
             }
 
-            // 2. Read First Identifier (Could be Type OR Name)
-            let first_ident = match self.current() {
-                Some(Token::Identifier(s)) => s.clone(),
-                _ => return Err("Expected argument identifier".to_string()),
-            };
+            let first = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected arg ident".to_string()) };
             self.advance();
 
-            // 3. Check for Colon to determine style
+            // S2L: Name : Type
             if self.check(&Token::Colon) {
-                // Style: Name: Type (S2L / Rust)
-                self.advance(); // Eat ':'
-                
-                let type_name = match self.current() {
-                    Some(Token::Identifier(s)) => s.clone(),
-                    _ => return Err("Expected type after colon".to_string()),
-                };
                 self.advance();
-                
-                // Handle Array Syntax for S2L: name: type[]
-                if self.check(&Token::LBracket) {
-                     // ... (omitted for brevity, same logic as before if needed)
-                }
-
-                args.push((type_name, first_ident)); // (Type, Name)
-
+                let type_name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected type".to_string()) };
+                self.advance();
+                args.push((type_name, first));
             } else {
-                // Style: Type Name (GLSL / C)
-                // first_ident was the Type. Now read the Name.
-                let param_name = match self.current() {
-                    Some(Token::Identifier(s)) => s.clone(),
-                    _ => return Err("Expected arg name".to_string()),
-                };
+                // C-Style: Type Name
+                let name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected arg name".to_string()) };
                 self.advance();
-
-                // Handle Array Syntax for GLSL: type name[N]
-                if self.check(&Token::LBracket) {
-                    self.advance();
-                    if let Some(Token::Number(_)) = self.current() { self.advance(); }
-                    self.consume(Token::RBracket)?;
-                    args.push((first_ident, format!("{}[]", param_name)));
-                } else {
-                    args.push((first_ident, param_name));
-                }
+                args.push((first, name));
             }
-
-            if self.check(&Token::Comma) {
-                self.advance();
-            }
+            if self.check(&Token::Comma) { self.advance(); }
         }
         Ok(args)
     }
-    
+
     fn parse_block(&mut self) -> Result<AstNode, String> {
         let mut statements = Vec::new();
         while !self.check(&Token::RBrace) && self.current().is_some() {
@@ -250,121 +156,90 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
     }
 
     fn parse_statement(&mut self) -> Result<AstNode, String> {
-        // 1. Nested Block
         if self.check(&Token::LBrace) {
             self.advance();
             return self.parse_block();
         }
-
-        if self.check(&Token::Break) {
-            self.advance();
-            self.consume(Token::Semicolon)?;
-            return Ok(AstNode::BreakStmt);
-        }
-
-        if self.check(&Token::For) {
-            self.advance();
-            self.consume(Token::LParen)?;
-            
-            // Init (usually a VarDecl or Assignment)
-            let init = self.parse_statement()?; 
-            // Note: parse_statement consumes the semicolon for VarDecl/Assignment!
-            
-            // Condition (Expression)
-            let condition = self.parse_expression()?;
-            self.consume(Token::Semicolon)?;
-            
-            // Increment (Expression/Assignment - no semicolon trailing in C-style usually, 
-            // but our parse_statement expects one. 
-            // Special case: parse expression strictly for increment)
-            let increment = self.parse_expression_assignment()?; 
-            self.consume(Token::RParen)?;
-            
-            let body = self.parse_statement()?; // Block usually
-            
-            return Ok(AstNode::ForStmt {
-                init: Box::new(init),
-                condition: Box::new(condition),
-                increment: Box::new(increment),
-                body: Box::new(body),
-            });
-        }
-
-        // 2. If
         if self.check(&Token::If) {
             self.advance();
             self.consume(Token::LParen)?;
             let condition = self.parse_expression()?;
             self.consume(Token::RParen)?;
             let then_branch = self.parse_statement()?;
-            
             let mut else_branch = None;
             if self.check(&Token::Else) {
                 self.advance();
                 else_branch = Some(Box::new(self.parse_statement()?));
             }
-            return Ok(AstNode::IfStmt {
-                condition: Box::new(condition),
-                then_branch: Box::new(then_branch),
-                else_branch,
-            });
+            return Ok(AstNode::IfStmt { condition: Box::new(condition), then_branch: Box::new(then_branch), else_branch });
         }
-
-        // 3. Return
         if self.check(&Token::Return) {
             self.advance();
             let expr = self.parse_expression()?;
             self.consume(Token::Semicolon)?;
             return Ok(AstNode::ReturnStmt(Box::new(expr)));
         }
+        if self.check(&Token::Break) {
+            self.advance();
+            self.consume(Token::Semicolon)?;
+            return Ok(AstNode::BreakStmt);
+        }
+        if self.check(&Token::For) {
+            self.advance();
+            self.consume(Token::LParen)?;
+            let init = self.parse_statement()?; 
+            let condition = self.parse_expression()?;
+            self.consume(Token::Semicolon)?;
+            let increment = self.parse_expression_assignment()?;
+            self.consume(Token::RParen)?;
+            let body = self.parse_statement()?;
+            return Ok(AstNode::ForStmt { init: Box::new(init), condition: Box::new(condition), increment: Box::new(increment), body: Box::new(body) });
+        }
 
-        // 4. Variable Decl or Assignment or Expression
-        if let Some(Token::Identifier(t_name)) = self.current() {
-            if let Some(Token::Identifier(v_name)) = self.peek() {
-                // It is a Variable Declaration: Type Name ...
-                let type_name = t_name.clone();
-                let var_name = v_name.clone();
-                self.advance(); // eat type
-                self.advance(); // eat name
-
-                // Array Decl
-                if self.check(&Token::LBracket) {
+        // Variable Declaration
+        if let Some(Token::Identifier(id)) = self.current() {
+            // S2L: var name : type = val;
+            if id == "var" {
+                if let Some(Token::Identifier(_)) = self.peek() {
+                    self.advance(); // eat var
+                    let name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected name".to_string()) };
                     self.advance();
-                    let size = match self.current() {
-                        Some(Token::Number(n)) => n.parse::<usize>().unwrap_or(0),
-                        _ => 0, 
-                    };
+                    self.consume(Token::Colon)?;
+                    let type_name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected type".to_string()) };
                     self.advance();
-                    self.consume(Token::RBracket)?;
                     
-                    let mut values = None;
+                    let mut value = None;
                     if self.check(&Token::Equals) {
                         self.advance();
-                        self.consume(Token::LBrace)?;
-                        let mut vals = Vec::new();
-                        while !self.check(&Token::RBrace) {
-                            vals.push(self.parse_expression()?);
-                            if self.check(&Token::Comma) { self.advance(); }
-                        }
-                        self.consume(Token::RBrace)?;
-                        values = Some(vals);
+                        value = Some(Box::new(self.parse_expression()?));
                     }
                     self.consume(Token::Semicolon)?;
-                    return Ok(AstNode::ArrayDecl { type_name, name: var_name, size, values });
+                    return Ok(AstNode::VarDecl { type_name, name, value });
                 }
-
-                // Normal Var Decl
-                let mut value = None;
-                if self.check(&Token::Equals) {
-                    self.advance();
-                    value = Some(Box::new(self.parse_expression()?));
+            }
+            
+            // C-Style: Type Name = val;
+            if let Some(Token::Identifier(_)) = self.peek() {
+                // If next token is Identifier, assume Type Name pattern
+                // But check it's not a function call or assignment
+                if !self.check_next(&Token::LParen) && !self.check_next(&Token::Equals) && !self.check_next(&Token::Dot) {
+                     let type_name = id.clone();
+                     self.advance();
+                     let name = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected name".to_string()) };
+                     self.advance();
+                     
+                     let mut value = None;
+                     if self.check(&Token::Equals) {
+                        self.advance();
+                        value = Some(Box::new(self.parse_expression()?));
+                     }
+                     self.consume(Token::Semicolon)?;
+                     return Ok(AstNode::VarDecl { type_name, name, value });
                 }
-                self.consume(Token::Semicolon)?;
-                return Ok(AstNode::VarDecl { type_name, name: var_name, value });
             }
         }
 
-        // Fallback: Expression or Assignment
+        // Fallback: Expr or Assignment
         let expr = self.parse_expression()?;
         if self.check(&Token::Equals) {
             self.advance();
@@ -372,9 +247,12 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
             self.consume(Token::Semicolon)?;
             return Ok(AstNode::Assignment { target: Box::new(expr), value: Box::new(value) });
         }
-        
         self.consume(Token::Semicolon)?;
         Ok(expr)
+    }
+
+    fn check_next(&self, token: &Token) -> bool {
+        self.peek() == Some(token)
     }
 
     fn parse_expression_assignment(&mut self) -> Result<AstNode, String> {
@@ -382,18 +260,13 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
         if self.check(&Token::Equals) {
             self.advance();
             let value = self.parse_expression()?;
-            // No semicolon consumption here
             return Ok(AstNode::Assignment { target: Box::new(expr), value: Box::new(value) });
         }
         Ok(expr)
     }
 
-    // --- Expression Parsing ---
-
-    fn parse_expression(&mut self) -> Result<AstNode, String> {
-        self.parse_comparison()
-    }
-
+    fn parse_expression(&mut self) -> Result<AstNode, String> { self.parse_comparison() }
+    
     fn parse_comparison(&mut self) -> Result<AstNode, String> {
         let mut left = self.parse_math()?;
         loop {
@@ -401,6 +274,8 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
                 Some(Token::Greater) => BinaryOperator::Greater,
                 Some(Token::Less) => BinaryOperator::Less,
                 Some(Token::DoubleEquals) => BinaryOperator::Equal,
+                Some(Token::LessEqual) => BinaryOperator::LessEqual,       
+                Some(Token::GreaterEqual) => BinaryOperator::GreaterEqual,
                 _ => break,
             };
             self.advance();
@@ -425,32 +300,31 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
         Ok(left)
     }
 
- fn parse_term(&mut self) -> Result<AstNode, String> {
-        let mut left = self.parse_unary()?; // Changed from parse_postfix
+    fn parse_term(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_unary()?;
         loop {
-            // ... [Mul/Div logic]
             let op = match self.current() {
                 Some(Token::Star) => BinaryOperator::Mul,
                 Some(Token::Slash) => BinaryOperator::Div,
                 _ => break,
             };
             self.advance();
-            let right = self.parse_unary()?; // Changed from parse_postfix
+            let right = self.parse_unary()?;
             left = AstNode::BinaryOp { left: Box::new(left), op, right: Box::new(right) };
         }
         Ok(left)
     }
 
- fn parse_unary(&mut self) -> Result<AstNode, String> {
+    fn parse_unary(&mut self) -> Result<AstNode, String> {
         if self.check(&Token::Minus) {
             self.advance();
             let right = self.parse_unary()?;
-            return Ok(AstNode::UnaryOp { op: crate::ast::UnaryOperator::Negate, right: Box::new(right) });
+            return Ok(AstNode::UnaryOp { op: UnaryOperator::Negate, right: Box::new(right) });
         }
         if self.check(&Token::Bang) {
             self.advance();
             let right = self.parse_unary()?;
-            return Ok(AstNode::UnaryOp { op: crate::ast::UnaryOperator::Not, right: Box::new(right) });
+            return Ok(AstNode::UnaryOp { op: UnaryOperator::Not, right: Box::new(right) });
         }
         self.parse_postfix()
     }
@@ -459,7 +333,6 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
         let mut expr = self.parse_primary()?;
         loop {
             if self.check(&Token::LParen) {
-                // Call
                 self.advance();
                 let mut args = Vec::new();
                 while !self.check(&Token::RParen) {
@@ -472,21 +345,16 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
                 } else {
                     return Err("Expected identifier before call".to_string());
                 }
+            } else if self.check(&Token::Dot) {
+                self.advance();
+                let member = match self.current() { Some(Token::Identifier(s)) => s.clone(), _ => return Err("Expected member".to_string()) };
+                self.advance();
+                expr = AstNode::MemberAccess { base: Box::new(expr), member };
             } else if self.check(&Token::LBracket) {
-                // Subscript
                 self.advance();
                 let index = self.parse_expression()?;
                 self.consume(Token::RBracket)?;
                 expr = AstNode::SubscriptAccess { base: Box::new(expr), index: Box::new(index) };
-            } else if self.check(&Token::Dot) {
-                // Member
-                self.advance();
-                let member = match self.current() {
-                    Some(Token::Identifier(s)) => s.clone(),
-                    _ => return Err("Expected member name".to_string()),
-                };
-                self.advance();
-                expr = AstNode::MemberAccess { base: Box::new(expr), member };
             } else {
                 break;
             }
@@ -499,17 +367,10 @@ fn parse_args(&mut self) -> Result<Vec<(String, String)>, String> {
             Some(Token::Number(s)) => {
                 let n = s.clone();
                 self.advance();
-                if n.contains('.') {
-                    Ok(AstNode::LiteralFloat(n.parse().unwrap_or(0.0)))
-                } else {
-                    Ok(AstNode::LiteralInt(n.parse().unwrap_or(0)))
-                }
+                if n.contains('.') { Ok(AstNode::LiteralFloat(n.parse().unwrap_or(0.0))) }
+                else { Ok(AstNode::LiteralInt(n.parse().unwrap_or(0))) }
             },
-            Some(Token::Identifier(s)) => {
-                let name = s.clone();
-                self.advance();
-                Ok(AstNode::Variable(name))
-            },
+            Some(Token::Identifier(s)) => { let n = s.clone(); self.advance(); Ok(AstNode::Variable(n)) },
             Some(Token::LParen) => {
                 self.advance();
                 let expr = self.parse_expression()?;

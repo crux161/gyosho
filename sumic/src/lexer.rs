@@ -40,6 +40,8 @@ pub enum Token {
     #[token(">")] Greater,
     #[token("<")] Less,
     #[token("==")] DoubleEquals,
+    #[token("<=")] LessEqual,   
+    #[token(">=")] GreaterEqual,
 
     // --- Literals & Identifiers ---
     

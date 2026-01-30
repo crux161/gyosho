@@ -4,26 +4,24 @@ pub trait CodeGenerator {
     fn generate(&self, ast: &AstNode) -> String;
 }
 
-// --- Metal Shading Language (MSL) Generator ---
+// --- Metal Generator ---
 
-pub struct MetalGenerator {
-    pub is_std_lib: bool,
-}
+pub struct MetalGenerator { pub is_std_lib: bool }
 
 impl MetalGenerator {
-    pub fn new(is_std_lib: bool) -> Self {
-        Self { is_std_lib }
-    }
+    pub fn new(is_std_lib: bool) -> Self { Self { is_std_lib } }
 
     fn generate_op(&self, op: &BinaryOperator) -> &'static str {
         match op {
-            BinaryOperator::Add => "+",
+            BinaryOperator::Add => "+", 
             BinaryOperator::Sub => "-",
-            BinaryOperator::Mul => "*",
+            BinaryOperator::Mul => "*", 
             BinaryOperator::Div => "/",
-            BinaryOperator::Equal => "==",
-            BinaryOperator::Less => "<",
+            BinaryOperator::Equal => "==", 
+            BinaryOperator::Less => "<", 
             BinaryOperator::Greater => ">",
+            BinaryOperator::LessEqual => "<=",    // <--- Added
+            BinaryOperator::GreaterEqual => ">=", // <--- Added
         }
     }
 }
@@ -31,70 +29,39 @@ impl MetalGenerator {
 impl CodeGenerator for MetalGenerator {
     fn generate(&self, ast: &AstNode) -> String {
         match ast {
-            AstNode::Program(nodes) => {
-                nodes.iter()
-                    .map(|n| self.generate(n))
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-            },
-
-            AstNode::StructDecl { name, fields, .. } => {
-                let field_str = fields.iter()
-                    .map(|(typ, n)| format!("    {} {};", typ, n))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("struct {} {{\n{}\n}};", name, field_str)
-            },
-
+            AstNode::Program(nodes) => nodes.iter().map(|n| self.generate(n)).collect::<Vec<_>>().join("\n\n"),
+            
             AstNode::FunctionDecl { return_type, name, args, body, .. } => {
-                if self.is_std_lib {
-                    return format!("// [Native Symbol] {}", name);
-                }
-                let arg_str = args.iter()
-                    .map(|(typ, n)| format!("{} {}", typ, n))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let arg_str = args.iter().map(|(t,n)| format!("{} {}", t, n)).collect::<Vec<_>>().join(", ");
                 format!("{} {}({}) {}", return_type, name, arg_str, self.generate(body))
             },
-
-            AstNode::Block(stmts) => {
-                let inner = stmts.iter()
-                    .map(|s| format!("    {}", self.generate(s)))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("{{\n{}\n}}", inner)
+            
+            AstNode::StructDecl { name, fields, .. } => {
+                let f_str = fields.iter().map(|(t,n)| format!("    {} {};", t, n)).collect::<Vec<_>>().join("\n");
+                format!("struct {} {{\n{}\n}};", name, f_str)
             },
 
-            AstNode::ReturnStmt(expr) => {
-                format!("return {};", self.generate(expr))
-            },
-
+            AstNode::Block(stmts) => format!("{{\n{}\n}}", stmts.iter().map(|s| format!("    {}", self.generate(s))).collect::<Vec<_>>().join("\n")),
+            
+            AstNode::ReturnStmt(expr) => format!("return {};", self.generate(expr)),
+            
             AstNode::IfStmt { condition, then_branch, else_branch } => {
-                let mut code = format!("if ({}) {}", self.generate(condition), self.generate(then_branch));
-                if let Some(else_b) = else_branch {
-                    code.push_str(&format!(" else {}", self.generate(else_b)));
-                }
-                code
+                let base = format!("if ({}) {}", self.generate(condition), self.generate(then_branch));
+                if let Some(e) = else_branch { format!("{} else {}", base, self.generate(e)) } else { base }
             },
 
             AstNode::ForStmt { init, condition, increment, body } => {
-                let init_code = self.generate(init);
-                let cond_code = self.generate(condition);
-                let inc_code = self.generate(increment);
-                let inc_clean = inc_code.trim_end_matches(';');
-
-                format!("for ({} {}; {}) {}", init_code, cond_code, inc_clean, self.generate(body))
+                let i = self.generate(init);
+                let c = self.generate(condition);
+                let inc = self.generate(increment);
+                format!("for ({} {}; {}) {}", i, c, inc.trim_end_matches(';'), self.generate(body))
             },
 
             AstNode::BreakStmt => "break;".to_string(),
 
             AstNode::VarDecl { type_name, name, value } => {
-                if let Some(val) = value {
-                    format!("{} {} = {};", type_name, name, self.generate(val))
-                } else {
-                    format!("{} {};", type_name, name)
-                }
+                if let Some(v) = value { format!("{} {} = {};", type_name, name, self.generate(v)) } 
+                else { format!("{} {};", type_name, name) }
             },
 
             AstNode::ArrayDecl { type_name, name, size, values } => {
@@ -106,48 +73,26 @@ impl CodeGenerator for MetalGenerator {
                 format!("{} {}[{}]{};", type_name, name, size, init_str)
             },
 
-            AstNode::Assignment { target, value } => {
-                format!("{} = {};", self.generate(target), self.generate(value))
-            },
-
-            AstNode::BinaryOp { left, op, right } => {
-                format!("({} {} {})", self.generate(left), self.generate_op(op), self.generate(right))
-            },
-
+            AstNode::Assignment { target, value } => format!("{} = {};", self.generate(target), self.generate(value)),
+            
+            AstNode::BinaryOp { left, op, right } => format!("({} {} {})", self.generate(left), self.generate_op(op), self.generate(right)),
+            
             AstNode::UnaryOp { op, right } => {
-                let op_str = match op {
-                    UnaryOperator::Negate => "-",
-                    UnaryOperator::Not => "!",
-                };
-                format!("({}{})", op_str, self.generate(right))
+                let s = match op { UnaryOperator::Negate => "-", UnaryOperator::Not => "!" };
+                format!("({}{})", s, self.generate(right))
             },
 
-            AstNode::Call { func_name, args } => {
-                let arg_str = args.iter().map(|a| self.generate(a)).collect::<Vec<_>>().join(", ");
-                format!("{}({})", func_name, arg_str)
-            },
-
-            AstNode::MemberAccess { base, member } => {
-                format!("{}.{}", self.generate(base), member)
-            },
-
-            AstNode::SubscriptAccess { base, index } => {
-                format!("{}[{}]", self.generate(base), self.generate(index))
-            },
-
-            AstNode::LiteralFloat(f) => {
-                if f.fract() == 0.0 {
-                    format!("{:.1}", f) 
-                } else {
-                    format!("{}", f)
-                }
-            },
+            AstNode::Call { func_name, args } => format!("{}({})", func_name, args.iter().map(|a| self.generate(a)).collect::<Vec<_>>().join(", ")),
+            
+            AstNode::MemberAccess { base, member } => format!("{}.{}", self.generate(base), member),
+            AstNode::SubscriptAccess { base, index } => format!("{}[{}]", self.generate(base), self.generate(index)),
+            
+            AstNode::LiteralFloat(f) => if f.fract() == 0.0 { format!("{:.1}", f) } else { format!("{}", f) },
             AstNode::LiteralInt(i) => format!("{}", i),
-            AstNode::Variable(name) => name.clone(),
+            AstNode::Variable(n) => n.clone(),
         }
     }
 }
-
 
 // --- WGSL Generator ---
 
@@ -165,7 +110,9 @@ impl WgslGenerator {
             "vec2"  => "vec2<f32>".to_string(),
             "vec3"  => "vec3<f32>".to_string(),
             "vec4"  => "vec4<f32>".to_string(),
-            "mat4"  => "mat4x4<f32>".to_string(), 
+            "mat2"  => "mat2x2<f32>".to_string(),
+            "mat3"  => "mat3x3<f32>".to_string(),
+            "mat4"  => "mat4x4<f32>".to_string(),
             "void"  => "".to_string(),
             _ => t.to_string(),
         }
@@ -173,13 +120,15 @@ impl WgslGenerator {
 
     fn generate_op(&self, op: &BinaryOperator) -> &'static str {
         match op {
-            BinaryOperator::Add => "+",
+            BinaryOperator::Add => "+", 
             BinaryOperator::Sub => "-",
-            BinaryOperator::Mul => "*",
+            BinaryOperator::Mul => "*", 
             BinaryOperator::Div => "/",
-            BinaryOperator::Equal => "==",
-            BinaryOperator::Less => "<",
+            BinaryOperator::Equal => "==", 
+            BinaryOperator::Less => "<", 
             BinaryOperator::Greater => ">",
+            BinaryOperator::LessEqual => "<=",    // <--- Added
+            BinaryOperator::GreaterEqual => ">=", // <--- Added
         }
     }
 }
@@ -187,178 +136,94 @@ impl WgslGenerator {
 impl CodeGenerator for WgslGenerator {
     fn generate(&self, ast: &AstNode) -> String {
         match ast {
-            AstNode::Program(nodes) => {
-                nodes.iter()
-                    .map(|n| self.generate(n))
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-            },
+            AstNode::Program(nodes) => nodes.iter().map(|n| self.generate(n)).filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n"),
 
             AstNode::StructDecl { name, fields, .. } => {
-                let field_str = fields.iter()
-                    .map(|(typ, n)| format!("    {}: {},", n, self.map_type(typ)))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("struct {} {{\n{}\n}};", name, field_str)
+                let f_str = fields.iter().map(|(t,n)| format!("    {}: {},", n, self.map_type(t))).collect::<Vec<_>>().join("\n");
+                format!("struct {} {{\n{}\n}};", name, f_str)
             },
 
             AstNode::FunctionDecl { return_type, name, args, body, .. } => {
-                let mapped_ret = self.map_type(return_type);
-                let ret_str = if mapped_ret.is_empty() { "".to_string() } else { format!("-> {}", mapped_ret) };
-                
-                let arg_str = args.iter()
-                    .map(|(typ, n)| format!("{}: {}", n, self.map_type(typ)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                
+                let ret = self.map_type(return_type);
+                let ret_str = if ret.is_empty() { "".to_string() } else { format!("-> {}", ret) };
+                let arg_str = args.iter().map(|(t,n)| format!("{}: {}", n, self.map_type(t))).collect::<Vec<_>>().join(", ");
                 format!("fn {}({}) {} {}", name, arg_str, ret_str, self.generate(body))
             },
 
             AstNode::Block(stmts) => {
-                let inner = stmts.iter()
-                    .map(|s| format!("    {}", self.generate(s)))
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let inner = stmts.iter().map(|s| format!("    {}", self.generate(s))).collect::<Vec<_>>().join("\n");
                 format!("{{\n{}\n}}", inner)
             },
 
             AstNode::ReturnStmt(expr) => format!("return {};", self.generate(expr)),
 
             AstNode::IfStmt { condition, then_branch, else_branch } => {
-                let mut code = format!("if ({}) {}", self.generate(condition), self.generate(then_branch));
-                if let Some(else_b) = else_branch {
-                    code.push_str(&format!(" else {}", self.generate(else_b)));
-                }
-                code
+                let base = format!("if ({}) {}", self.generate(condition), self.generate(then_branch));
+                if let Some(e) = else_branch { format!("{} else {}", base, self.generate(e)) } else { base }
             },
 
             AstNode::ForStmt { init, condition, increment, body } => {
-                let init_code = self.generate(init); 
-                let cond_code = self.generate(condition); 
-                let inc_code = self.generate(increment); 
-                let inc_clean = inc_code.trim_end_matches(';');
-                
-                format!("for ({} {}; {}) {}", init_code, cond_code, inc_clean, self.generate(body))
+                let i = self.generate(init);
+                let c = self.generate(condition);
+                let inc = self.generate(increment);
+                format!("for ({} {}; {}) {}", i, c, inc.trim_end_matches(';'), self.generate(body))
             },
 
             AstNode::BreakStmt => "break;".to_string(),
 
             AstNode::VarDecl { type_name, name, value } => {
-                let mapped_type = self.map_type(type_name);
-                if let Some(val) = value {
-                    format!("var {}: {} = {};", name, mapped_type, self.generate(val))
-                } else {
-                    format!("var {}: {};", name, mapped_type)
-                }
+                let t = self.map_type(type_name);
+                if let Some(v) = value { format!("var {}: {} = {};", name, t, self.generate(v)) }
+                else { format!("var {}: {};", name, t) }
             },
 
             AstNode::ArrayDecl { type_name, name, size, values } => {
-                let mapped_type = self.map_type(type_name);
-                let type_str = format!("array<{}, {}>", mapped_type, size);
-                
+                let t = self.map_type(type_name);
+                let t_arr = format!("array<{}, {}>", t, size);
                 if let Some(vals) = values {
                     let v_str = vals.iter().map(|v| self.generate(v)).collect::<Vec<_>>().join(", ");
-                    format!("var {}: {} = {}({});", name, type_str, type_str, v_str)
-                } else {
-                    format!("var {}: {};", name, type_str)
-                }
+                    format!("var {}: {} = {}({});", name, t_arr, t_arr, v_str)
+                } else { format!("var {}: {};", name, t_arr) }
             },
 
-            AstNode::Assignment { target, value } => {
-                format!("{} = {};", self.generate(target), self.generate(value))
-            },
+            AstNode::Assignment { target, value } => format!("{} = {};", self.generate(target), self.generate(value)),
 
-            AstNode::BinaryOp { left, op, right } => {
-                format!("({} {} {})", self.generate(left), self.generate_op(op), self.generate(right))
-            },
+            AstNode::BinaryOp { left, op, right } => format!("({} {} {})", self.generate(left), self.generate_op(op), self.generate(right)),
 
             AstNode::UnaryOp { op, right } => {
-                let op_str = match op {
-                    UnaryOperator::Negate => "-",
-                    UnaryOperator::Not => "!",
-                };
-                format!("({}{})", op_str, self.generate(right))
+                let s = match op { UnaryOperator::Negate => "-", UnaryOperator::Not => "!" };
+                format!("({}{})", s, self.generate(right))
             },
 
             AstNode::Call { func_name, args } => {
                 let arg_str = args.iter().map(|a| self.generate(a)).collect::<Vec<_>>().join(", ");
-                if ["vec2", "vec3", "vec4"].contains(&func_name.as_str()) {
-                     format!("{}<f32>({})", func_name, arg_str)
-                } else {
-                     format!("{}({})", func_name, arg_str)
+                match func_name.as_str() {
+                    "vec2" | "vec3" | "vec4" => format!("{}<f32>({})", func_name, arg_str),
+                    "mat2" => format!("mat2x2<f32>({})", arg_str),
+                    "mat3" => format!("mat3x3<f32>({})", arg_str),
+                    "mat4" => format!("mat4x4<f32>({})", arg_str),
+                    "float" => format!("f32({})", arg_str),
+                    "int" => format!("i32({})", arg_str),
+                    "uint" => format!("u32({})", arg_str),
+                    _ => format!("{}({})", func_name, arg_str)
                 }
             },
 
             AstNode::MemberAccess { base, member } => format!("{}.{}", self.generate(base), member),
             AstNode::SubscriptAccess { base, index } => format!("{}[{}]", self.generate(base), self.generate(index)),
             
-            AstNode::LiteralFloat(f) => {
-                if f.fract() == 0.0 { format!("{:.1}", f) } else { format!("{}", f) }
-            },
+            AstNode::LiteralFloat(f) => if f.fract() == 0.0 { format!("{:.1}", f) } else { format!("{}", f) },
             AstNode::LiteralInt(i) => format!("{}", i),
             
-            // --- THE KEY FIX IS HERE ---
-            AstNode::Variable(name) => {
-                match name.as_str() {
-                    "iTime" => "u.time".to_string(),
-                    "iResolution" => "vec3<f32>(u.resolution, 1.0)".to_string(),
-                    "iMouse" => "u.mouse".to_string(),
-                    _ => name.clone(),
-                }
+            AstNode::Variable(name) => match name.as_str() {
+                "iTime" => "u.time".to_string(),
+                "iResolution" => "vec3<f32>(u.resolution, 1.0)".to_string(),
+                "iMouse" => "u.mouse".to_string(),
+                _ => name.clone(),
             },
         }
     }
 }
-
-// --- Markdown Documentation Generator ---
 
 pub struct MarkdownGenerator;
-
-impl CodeGenerator for MarkdownGenerator {
-    fn generate(&self, ast: &AstNode) -> String {
-        if let AstNode::Program(nodes) = ast {
-            let docs: Vec<String> = nodes.iter()
-                .filter_map(|n| self.generate_node_doc(n))
-                .collect();
-            
-            if docs.is_empty() { return String::new(); }
-            
-            format!("# API Documentation\n\n{}", docs.join("\n---\n"))
-        } else {
-            String::new()
-        }
-    }
-}
-
-impl MarkdownGenerator {
-    fn generate_node_doc(&self, ast: &AstNode) -> Option<String> {
-        match ast {
-            AstNode::FunctionDecl { return_type, name, args, doc_string, .. } => {
-                let arg_list = args.iter()
-                    .map(|(t, n)| format!("`{}` {}", t, n))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                
-                let mut md = format!("### `{}`\n", name);
-                if let Some(doc) = doc_string {
-                    md.push_str(&format!("> {}\n\n", doc));
-                }
-                md.push_str(&format!("- **Signature**: `{} {}({})`\n", return_type, name, arg_list));
-                Some(md)
-            },
-            AstNode::StructDecl { name, fields, doc_string } => {
-                let mut md = format!("### `struct {}`\n", name);
-                if let Some(doc) = doc_string {
-                    md.push_str(&format!("> {}\n\n", doc));
-                }
-                md.push_str("- **Fields**:\n");
-                for (t, n) in fields {
-                    md.push_str(&format!("  - `{}` {}\n", t, n));
-                }
-                Some(md)
-            },
-            _ => None,
-        }
-    }
-}
+impl CodeGenerator for MarkdownGenerator { fn generate(&self, _: &AstNode) -> String { String::new() } }
